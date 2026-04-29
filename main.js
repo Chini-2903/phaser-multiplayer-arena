@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 // Shared Global State for Client
 const GAME_COLORS = [0x0000ff, 0xff0000, 0x00ff00, 0x9900ff, 0xff9900, 0x00ffff, 0xff00ff, 0xffff00];
-let globalSocket = io('[https://phaser-multiplayer-arena.onrender.com](https://phaser-multiplayer-arena.onrender.com)', { autoConnect: false });
+let globalSocket = io('https://phaser-multiplayer-arena.onrender.com', { autoConnect: false });
 let myPlayerName = "Anonymous";
 
 class MenuScene extends Phaser.Scene {
