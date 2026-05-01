@@ -3,7 +3,13 @@ import { io } from 'socket.io-client';
 
 // Shared Global State for Client
 const GAME_COLORS = [0x0000ff, 0xff0000, 0x00ff00, 0x9900ff, 0xff9900, 0x00ffff, 0xff00ff, 0xffff00];
-let globalSocket = io('https://phaser-multiplayer-arena.onrender.com', { autoConnect: false });
+
+// FLAWLESS FIX: Force WebSockets to bypass Vercel HTTP CORS blocking
+let globalSocket = io('https://phaser-multiplayer-arena.onrender.com', { 
+    autoConnect: false,
+    transports: ['websocket'] 
+});
+
 let myPlayerName = "Anonymous";
 
 class MenuScene extends Phaser.Scene {
@@ -14,6 +20,18 @@ class MenuScene extends Phaser.Scene {
         
         const cx = this.cameras.main.centerX;
         const cy = this.cameras.main.centerY;
+
+        // --- NEW: LIVE SERVER STATUS INDICATOR ---
+        this.statusText = this.add.text(cx, 30, '🟡 Waking up server... (Can take 50s on free host)', { fontSize: '18px', fill: '#ffff00', fontStyle: 'bold' }).setOrigin(0.5);
+        
+        globalSocket.on('connect', () => {
+            this.statusText.setText('🟢 Server Online & Connected!').setFill('#00ff00');
+        });
+
+        globalSocket.on('connect_error', (err) => {
+            this.statusText.setText('🔴 Cannot reach server. Retrying...').setFill('#ff0000');
+        });
+        // ----------------------------------------
 
         if (!document.getElementById('playerNameInput')) {
             const input = document.createElement('input');
@@ -47,7 +65,11 @@ class MenuScene extends Phaser.Scene {
             const enteredName = nameInput.value.trim();
             
             if(!enteredName) return alert("Name is required!");
-            if (!globalSocket.connected) return alert("Cannot reach server!");
+            
+            // NEW: Wait for server to wake up instead of generic crash
+            if (!globalSocket.connected) {
+                return alert("Still connecting! Free servers sleep after 15 mins of inactivity. Please wait for the text at the top to turn Green before hosting.");
+            }
             
             myPlayerName = enteredName;
             nameInput.style.display = 'none'; 
@@ -63,6 +85,10 @@ class MenuScene extends Phaser.Scene {
 
             if(!enteredName) return alert("Name is required!");
             
+            if (!globalSocket.connected) {
+                return alert("Still connecting! Please wait for the text at the top to turn Green before joining.");
+            }
+
             myPlayerName = enteredName;
             let code = prompt("Enter 6-character Party Code:");
             
@@ -92,6 +118,9 @@ class MenuScene extends Phaser.Scene {
         });
     }
 }
+
+// ... [KEEP ALL OTHER SCENES EXACTLY THE SAME - LobbyScene, GameScene, UIScene] ...
+// (To save space here, just paste the rest of your existing main.js below the MenuScene!)
 
 class LobbyScene extends Phaser.Scene {
     constructor() { super('LobbyScene'); }
@@ -187,7 +216,7 @@ class GameScene extends Phaser.Scene {
         this.isDead = false;
         this.isSpectating = false;
         this.spectateTarget = null;
-        this.lastFired = 0; // NEW: Cooldown tracker for shooting
+        this.lastFired = 0; 
     }
     
     preload() {
@@ -305,7 +334,6 @@ class GameScene extends Phaser.Scene {
         this.input.on('pointerdown', (ptr) => {
             if (!this.ship || this.isDead || this.uiScene.isCountdown || this.uiScene.isMatchEnded) return;
             
-            // NEW: Fire Rate Cooldown Logic (1.5 seconds)
             let now = Date.now();
             if (now - this.lastFired < 1500) return;
             this.lastFired = now;
@@ -315,7 +343,6 @@ class GameScene extends Phaser.Scene {
             let worldY = ptr.y + this.cameras.main.scrollY;
             let angle = Phaser.Math.Angle.Between(this.ship.x, this.ship.y, worldX, worldY);
             
-            // NEW: Reduced bullet speed by 25% (from 12 to 9)
             let vx = Math.cos(angle) * 9, vy = Math.sin(angle) * 9;
             
             this.fireBullet(this.ship.x, this.ship.y, vx, vy, true);
