@@ -517,7 +517,7 @@ class UIScene extends Phaser.Scene {
     }
 
     create() {
-        this.input.addPointer(3); // Support up to 3 fingers
+        this.input.addPointer(3); 
 
         this.add.rectangle(10, 10, 200, 150, 0x000000, 0.5).setOrigin(0,0);
         this.add.text(20, 20, 'LEADERBOARD', { fontSize: '14px', fill: '#ffff00', fontStyle: 'bold' });
@@ -553,42 +553,49 @@ class UIScene extends Phaser.Scene {
 
         this.countdownText = this.add.text(this.cameras.main.centerX, this.cameras.main.centerY, '5', { fontSize: '80px', fill: '#fff', fontStyle: 'bold' }).setOrigin(0.5);
 
-        // --- NEW: STATIC VIRTUAL JOYSTICK ---
-        // Fixed coordinates in the bottom left corner
-        this.joyBaseX = 120; 
-        this.joyBaseY = this.cameras.main.height - 120; 
-        this.joystickBase = this.add.circle(this.joyBaseX, this.joyBaseY, 60, 0x000000, 0.5).setStrokeStyle(4, 0xffffff, 0.6).setDepth(100);
-        this.joystickThumb = this.add.circle(this.joyBaseX, this.joyBaseY, 30, 0xffffff, 0.9).setDepth(100);
+        // --- PORTRAIT MODE STATIC JOYSTICK ---
+        // Sized correctly for phone thumbs and pinned so it won't scroll away
+        this.joyBaseX = 90; 
+        this.joyBaseY = this.cameras.main.height - 90; 
+        this.joystickBase = this.add.circle(this.joyBaseX, this.joyBaseY, 50, 0x000000, 0.5).setStrokeStyle(4, 0xffffff, 0.6).setDepth(100).setScrollFactor(0);
+        this.joystickThumb = this.add.circle(this.joyBaseX, this.joyBaseY, 25, 0xffffff, 0.9).setDepth(100).setScrollFactor(0);
         this.moveVector = { x: 0, y: 0 };
 
-        // Tap to Shoot (Only responds to right half of screen)
+        // Firing logic optimized for portrait screens
         this.input.on('pointerdown', (ptr) => {
             if (this.isCountdown || this.gameScene.isDead || this.isMatchEnded || this.isPausedLocally) return;
 
-            const screenCenter = this.cameras.main.width / 2;
-            if (ptr.x >= screenCenter) {
+            // In portrait, you can tap anywhere on the RIGHT half, OR anywhere on the TOP half to shoot.
+            const isRightHalf = ptr.x > this.cameras.main.width / 2;
+            const isTopHalf = ptr.y < this.cameras.main.height * 0.6;
+
+            if (isRightHalf || isTopHalf) {
                 this.gameScene.handleShoot(ptr.x, ptr.y);
             }
         });
     }
 
-    // NEW: Polling loop runs every frame. Never drops touches.
     update() {
         if (this.isCountdown || this.gameScene.isDead || this.isMatchEnded || this.isPausedLocally) return;
 
-        let joystickActive = false;
-        const screenCenter = this.cameras.main.width / 2;
+        // DYNAMIC ANCHORING: This guarantees the joystick survives the URL bar hiding/showing!
+        this.joyBaseX = 90;
+        this.joyBaseY = this.cameras.main.height - 90;
+        this.joystickBase.setPosition(this.joyBaseX, this.joyBaseY);
 
-        // Check every finger touching the screen
+        let joystickActive = false;
+
+        // Polling loop to flawlessly track the thumb without browser swipe interference
         for (let ptr of this.input.pointers) {
-            // If a finger is pressed down on the left half of the screen
-            if (ptr.isDown && ptr.x < screenCenter) {
+            // Check if the touch is in the bottom-left quadrant
+            const isBottomLeft = ptr.x < this.cameras.main.width / 2 && ptr.y > this.cameras.main.height * 0.5;
+
+            if (ptr.isDown && isBottomLeft) {
                 let dx = ptr.x - this.joyBaseX;
                 let dy = ptr.y - this.joyBaseY;
                 let dist = Math.sqrt(dx * dx + dy * dy);
-                let maxDist = 60;
+                let maxDist = 50; // Match the base radius
 
-                // Lock thumb visual inside the base ring
                 if (dist > maxDist) {
                     dx = (dx / dist) * maxDist;
                     dy = (dy / dist) * maxDist;
@@ -598,11 +605,11 @@ class UIScene extends Phaser.Scene {
                 this.moveVector.x = dx / maxDist;
                 this.moveVector.y = dy / maxDist;
                 joystickActive = true;
-                break; // Only use one finger for movement
+                break; 
             }
         }
 
-        // Snap joystick back to center if no fingers are down on left side
+        // Snap back to center
         if (!joystickActive) {
             this.joystickThumb.setPosition(this.joyBaseX, this.joyBaseY);
             this.moveVector.x = 0;
@@ -691,7 +698,6 @@ class UIScene extends Phaser.Scene {
         }, 8000);
     }
 }
-
 const config = { 
     type: Phaser.AUTO, 
     scale: { mode: Phaser.Scale.RESIZE, width: '100%', height: '100%' }, 
