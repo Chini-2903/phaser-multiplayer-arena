@@ -33,7 +33,6 @@ class MenuScene extends Phaser.Scene {
             this.statusText.setText('🔴 Cannot reach server. Retrying...').setFill('#ff0000');
         });
 
-        // Mobile responsive input box
         if (!document.getElementById('playerNameInput')) {
             const input = document.createElement('input');
             input.id = 'playerNameInput';
@@ -58,7 +57,10 @@ class MenuScene extends Phaser.Scene {
             document.getElementById('playerNameInput').style.display = 'block';
         }
 
-        // Title and Instructions
+        // --- NEW: PROOF OF UPDATE TAG ---
+        this.add.text(cx, cy - 130, 'v2.0 Mobile Update', { fontSize: '16px', fill: '#00ff00', fontStyle: 'bold' }).setOrigin(0.5);
+        // --------------------------------
+
         this.add.text(cx, cy - 100, 'MULTIPLAYER ARENA', { fontSize: '32px', fill: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
         this.add.text(cx, cy - 50, '📱 Mobile: Left half moves | Right half shoots', { fontSize: '14px', fill: '#aaa' }).setOrigin(0.5);
 
@@ -112,7 +114,6 @@ class MenuScene extends Phaser.Scene {
         });
     }
 }
-
 class LobbyScene extends Phaser.Scene {
     constructor() { super('LobbyScene'); }
 
