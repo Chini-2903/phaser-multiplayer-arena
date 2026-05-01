@@ -66,9 +66,8 @@ class MenuScene extends Phaser.Scene {
             
             if(!enteredName) return alert("Name is required!");
             
-            // NEW: Wait for server to wake up instead of generic crash
             if (!globalSocket.connected) {
-                return alert("Still connecting! Free servers sleep after 15 mins of inactivity. Please wait for the text at the top to turn Green before hosting.");
+                return alert("Still connecting! Please wait for the text at the top to turn Green before hosting.");
             }
             
             myPlayerName = enteredName;
@@ -118,9 +117,6 @@ class MenuScene extends Phaser.Scene {
         });
     }
 }
-
-// ... [KEEP ALL OTHER SCENES EXACTLY THE SAME - LobbyScene, GameScene, UIScene] ...
-// (To save space here, just paste the rest of your existing main.js below the MenuScene!)
 
 class LobbyScene extends Phaser.Scene {
     constructor() { super('LobbyScene'); }
