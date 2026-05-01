@@ -554,21 +554,20 @@ class UIScene extends Phaser.Scene {
 
         this.countdownText = this.add.text(this.cameras.main.centerX, this.cameras.main.centerY, '5', { fontSize: '80px', fill: '#fff', fontStyle: 'bold' }).setOrigin(0.5);
 
-        // --- PORTRAIT MODE STATIC JOYSTICK ---
-        // Sized correctly for phone thumbs and pinned so it won't scroll away
-        this.joyBaseX = 90; 
-        this.joyBaseY = this.cameras.main.height - 90; 
-        this.joystickBase = this.add.circle(this.joyBaseX, this.joyBaseY, 50, 0x000000, 0.5).setStrokeStyle(4, 0xffffff, 0.6).setDepth(100).setScrollFactor(0);
-        this.joystickThumb = this.add.circle(this.joyBaseX, this.joyBaseY, 25, 0xffffff, 0.9).setDepth(100).setScrollFactor(0);
+        // --- BRIGHT NEON JOYSTICK (Impossible to miss) ---
+        this.joyBaseX = 100; 
+        this.joyBaseY = this.sys.game.scale.gameSize.height - 100; // Bulletproof anchoring
+        
+        // Made it bright blue so it stands out perfectly
+        this.joystickBase = this.add.circle(this.joyBaseX, this.joyBaseY, 60, 0x00aaff, 0.3).setStrokeStyle(4, 0x00aaff, 0.8).setDepth(100).setScrollFactor(0);
+        this.joystickThumb = this.add.circle(this.joyBaseX, this.joyBaseY, 30, 0xffffff, 1).setDepth(100).setScrollFactor(0);
         this.moveVector = { x: 0, y: 0 };
 
-        // Firing logic optimized for portrait screens
         this.input.on('pointerdown', (ptr) => {
             if (this.isCountdown || this.gameScene.isDead || this.isMatchEnded || this.isPausedLocally) return;
 
-            // In portrait, you can tap anywhere on the RIGHT half, OR anywhere on the TOP half to shoot.
             const isRightHalf = ptr.x > this.cameras.main.width / 2;
-            const isTopHalf = ptr.y < this.cameras.main.height * 0.6;
+            const isTopHalf = ptr.y < this.cameras.main.height * 0.5;
 
             if (isRightHalf || isTopHalf) {
                 this.gameScene.handleShoot(ptr.x, ptr.y);
@@ -579,23 +578,21 @@ class UIScene extends Phaser.Scene {
     update() {
         if (this.isCountdown || this.gameScene.isDead || this.isMatchEnded || this.isPausedLocally) return;
 
-        // DYNAMIC ANCHORING: This guarantees the joystick survives the URL bar hiding/showing!
-        this.joyBaseX = 90;
-        this.joyBaseY = this.cameras.main.height - 90;
+        // Force it to constantly snap to the true bottom left of the phone screen
+        this.joyBaseX = 100;
+        this.joyBaseY = this.sys.game.scale.gameSize.height - 100;
         this.joystickBase.setPosition(this.joyBaseX, this.joyBaseY);
 
         let joystickActive = false;
 
-        // Polling loop to flawlessly track the thumb without browser swipe interference
         for (let ptr of this.input.pointers) {
-            // Check if the touch is in the bottom-left quadrant
             const isBottomLeft = ptr.x < this.cameras.main.width / 2 && ptr.y > this.cameras.main.height * 0.5;
 
             if (ptr.isDown && isBottomLeft) {
                 let dx = ptr.x - this.joyBaseX;
                 let dy = ptr.y - this.joyBaseY;
                 let dist = Math.sqrt(dx * dx + dy * dy);
-                let maxDist = 50; // Match the base radius
+                let maxDist = 60; 
 
                 if (dist > maxDist) {
                     dx = (dx / dist) * maxDist;
@@ -610,7 +607,6 @@ class UIScene extends Phaser.Scene {
             }
         }
 
-        // Snap back to center
         if (!joystickActive) {
             this.joystickThumb.setPosition(this.joyBaseX, this.joyBaseY);
             this.moveVector.x = 0;
@@ -618,87 +614,7 @@ class UIScene extends Phaser.Scene {
         }
     }
 
-    startCountdown() {
-        let count = 5;
-        let intv = setInterval(() => {
-            count--;
-            if(count > 0) this.countdownText.setText(count);
-            else {
-                clearInterval(intv);
-                this.countdownText.setText('FIGHT!');
-                setTimeout(() => { this.countdownText.setVisible(false); this.isCountdown = false; }, 1000);
-            }
-        }, 1000);
-    }
-
-    updateLeaderboard(playersArray) {
-        let text = "";
-        let aliveCount = 0;
-        playersArray.forEach((p, i) => {
-            text += `${i+1}. ${p.name} - ${p.score}pts (${p.deaths} D)\n`;
-            if (p.hp > 0) aliveCount++;
-        });
-        this.leaderboardText.setText(text);
-        this.aliveText.setText(`Alive: ${aliveCount}`);
-    }
-
-    updateTimer(timeStr) { this.timerText.setText(timeStr); }
-
-    showDeathScreen() {
-        if (this.isMatchEnded) return; 
-        
-        this.deathBg = this.add.rectangle(0, 0, this.cameras.main.width, this.cameras.main.height, 0xff0000, 0.3).setOrigin(0,0);
-        this.deathText = this.add.text(this.cameras.main.centerX, 150, 'YOU DIED', { fontSize: '48px', fill: '#ff0000', fontStyle: 'bold' }).setOrigin(0.5);
-        
-        this.specBtn = this.add.text(this.cameras.main.centerX, 250, 'SPECTATE NEXT', { fontSize: '20px', backgroundColor: '#333', padding: {x:10, y:5} }).setOrigin(0.5).setInteractive();
-        this.specBtn.on('pointerdown', () => {
-            let others = this.gameScene.otherPlayers.getChildren();
-            if(others.length > 0) {
-                this.gameScene.isSpectating = true;
-                this.deathBg.setVisible(false);
-                this.deathText.setVisible(false);
-                
-                this.specBtn.setPosition(this.cameras.main.centerX - 100, this.cameras.main.height - 50);
-                this.lobBtn.setPosition(this.cameras.main.centerX + 100, this.cameras.main.height - 50);
-
-                let specTarget = others[Math.floor(Math.random() * others.length)];
-                this.gameScene.spectateTarget = specTarget;
-                this.gameScene.cameras.main.startFollow(specTarget);
-            }
-        });
-
-        this.lobBtn = this.add.text(this.cameras.main.centerX, 320, 'RETURN TO LOBBY', { fontSize: '20px', backgroundColor: '#800', padding: {x:10, y:5} }).setOrigin(0.5).setInteractive();
-        this.lobBtn.on('pointerdown', () => {
-            globalSocket.emit('returnToLobby');
-            this.scene.stop('GameScene');
-            this.scene.start('LobbyScene', { roomCode: this.gameScene.roomCode });
-            this.scene.stop();
-        });
-    }
-
-    showEndScreen(leaderboard) {
-        this.isMatchEnded = true;
-        this.add.rectangle(0, 0, this.cameras.main.width, this.cameras.main.height, 0x000000, 1.0).setOrigin(0,0).setDepth(100).setInteractive(); 
-
-        this.add.text(this.cameras.main.centerX, 100, 'MATCH ENDED', { fontSize: '48px', fill: '#00ff00', fontStyle: 'bold' }).setOrigin(0.5).setDepth(101);
-        
-        let winText = leaderboard.length > 0 ? `${leaderboard[0].name} WINS!` : "DRAW!";
-        this.add.text(this.cameras.main.centerX, 160, winText, { fontSize: '36px', fill: '#ffff00' }).setOrigin(0.5).setDepth(101);
-        
-        let boardText = "";
-        leaderboard.forEach((p, i) => { boardText += `${i+1}. ${p.name} - ${p.score} pts (${p.deaths} D)\n`; });
-        this.add.text(this.cameras.main.centerX, 250, boardText, { fontSize: '20px', fill: '#fff', align: 'center' }).setOrigin(0.5, 0).setDepth(101);
-
-        this.add.text(this.cameras.main.centerX, this.cameras.main.height - 60, 'Returning to Lobby...', { fontSize: '18px', fill: '#aaa' }).setOrigin(0.5).setDepth(101);
-
-        setTimeout(() => {
-             globalSocket.emit('returnToLobby');
-             this.scene.stop('GameScene');
-             this.scene.start('LobbyScene', { roomCode: this.gameScene.roomCode });
-             this.scene.stop();
-        }, 8000);
-    }
-}
+    // ... [Keep your startCountdown, updateLeaderboard, showDeathScreen, showEndScreen identical here]
 const config = { 
     type: Phaser.AUTO, 
     scale: { mode: Phaser.Scale.RESIZE, width: '100%', height: '100%' }, 
