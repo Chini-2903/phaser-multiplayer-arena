@@ -1,10 +1,8 @@
 import * as Phaser from 'phaser';
 import { io } from 'socket.io-client';
 
-// Shared Global State for Client
 const GAME_COLORS = [0x0000ff, 0xff0000, 0x00ff00, 0x9900ff, 0xff9900, 0x00ffff, 0xff00ff, 0xffff00];
 
-// FLAWLESS FIX: Force WebSockets to bypass Vercel HTTP CORS blocking
 let globalSocket = io('https://phaser-multiplayer-arena.onrender.com', { 
     autoConnect: false,
     transports: ['websocket'] 
@@ -21,18 +19,17 @@ class MenuScene extends Phaser.Scene {
         const cx = this.cameras.main.centerX;
         const cy = this.cameras.main.centerY;
 
-        // --- NEW: LIVE SERVER STATUS INDICATOR ---
-        this.statusText = this.add.text(cx, 30, '🟡 Waking up server... (Can take 50s on free host)', { fontSize: '18px', fill: '#ffff00', fontStyle: 'bold' }).setOrigin(0.5);
+        this.statusText = this.add.text(cx, 30, '🟡 Waking up server...', { fontSize: '16px', fill: '#ffff00', fontStyle: 'bold' }).setOrigin(0.5);
         
         globalSocket.on('connect', () => {
-            this.statusText.setText('🟢 Server Online & Connected!').setFill('#00ff00');
+            this.statusText.setText('🟢 Server Online!').setFill('#00ff00');
         });
 
         globalSocket.on('connect_error', (err) => {
             this.statusText.setText('🔴 Cannot reach server. Retrying...').setFill('#ff0000');
         });
-        // ----------------------------------------
 
+        // Mobile responsive input box
         if (!document.getElementById('playerNameInput')) {
             const input = document.createElement('input');
             input.id = 'playerNameInput';
@@ -50,43 +47,39 @@ class MenuScene extends Phaser.Scene {
             input.style.color = '#00ff00';
             input.style.border = '2px solid #00ff00';
             input.style.outline = 'none';
+            input.style.width = '80%'; 
+            input.style.maxWidth = '300px'; 
             document.body.appendChild(input);
         } else {
             document.getElementById('playerNameInput').style.display = 'block';
         }
 
-        this.add.text(cx, cy - 100, 'MULTIPLAYER ARENA', { fontSize: '40px', fill: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
+        // Title and Instructions
+        this.add.text(cx, cy - 100, 'MULTIPLAYER ARENA', { fontSize: '32px', fill: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
+        this.add.text(cx, cy - 50, '📱 Mobile: Left half moves | Right half shoots', { fontSize: '14px', fill: '#aaa' }).setOrigin(0.5);
 
-        const hostBtn = this.add.rectangle(cx - 150, cy + 50, 200, 50, 0x00ff00).setInteractive();
-        this.add.text(cx - 150, cy + 50, 'HOST GAME', { fontSize: '20px', fill: '#000', fontStyle: 'bold' }).setOrigin(0.5);
+        const hostBtn = this.add.rectangle(cx, cy + 30, 200, 50, 0x00ff00).setInteractive();
+        this.add.text(cx, cy + 30, 'HOST GAME', { fontSize: '20px', fill: '#000', fontStyle: 'bold' }).setOrigin(0.5);
         
         hostBtn.on('pointerdown', () => {
             const nameInput = document.getElementById('playerNameInput');
             const enteredName = nameInput.value.trim();
-            
             if(!enteredName) return alert("Name is required!");
-            
-            if (!globalSocket.connected) {
-                return alert("Still connecting! Please wait for the text at the top to turn Green before hosting.");
-            }
+            if (!globalSocket.connected) return alert("Still connecting! Please wait for the text to turn Green.");
             
             myPlayerName = enteredName;
             nameInput.style.display = 'none'; 
             globalSocket.emit('createRoom', myPlayerName);
         });
 
-        const joinBtn = this.add.rectangle(cx + 150, cy + 50, 200, 50, 0x00aaff).setInteractive();
-        this.add.text(cx + 150, cy + 50, 'JOIN GAME', { fontSize: '20px', fill: '#000', fontStyle: 'bold' }).setOrigin(0.5);
+        const joinBtn = this.add.rectangle(cx, cy + 100, 200, 50, 0x00aaff).setInteractive();
+        this.add.text(cx, cy + 100, 'JOIN GAME', { fontSize: '20px', fill: '#000', fontStyle: 'bold' }).setOrigin(0.5);
 
         joinBtn.on('pointerdown', () => {
             const nameInput = document.getElementById('playerNameInput');
             const enteredName = nameInput.value.trim();
-
             if(!enteredName) return alert("Name is required!");
-            
-            if (!globalSocket.connected) {
-                return alert("Still connecting! Please wait for the text at the top to turn Green before joining.");
-            }
+            if (!globalSocket.connected) return alert("Still connecting! Please wait for the text to turn Green.");
 
             myPlayerName = enteredName;
             let code = prompt("Enter 6-character Party Code:");
@@ -106,11 +99,9 @@ class MenuScene extends Phaser.Scene {
         globalSocket.on('roomCreated', (roomCode) => {
             if(this.scene.isActive()) this.scene.start('LobbyScene', { roomCode: roomCode });
         });
-
         globalSocket.on('roomJoined', (roomCode) => {
             if(this.scene.isActive()) this.scene.start('LobbyScene', { roomCode: roomCode });
         });
-
         globalSocket.on('joinError', (msg) => {
             alert(msg);
             document.getElementById('playerNameInput').style.display = 'block';
@@ -136,11 +127,11 @@ class LobbyScene extends Phaser.Scene {
             this.scene.start('MenuScene');
         });
 
-        this.add.text(cx, 50, `PARTY LOBBY: ${this.roomCode}`, { fontSize: '36px', fill: '#ffff00', fontStyle: 'bold' }).setOrigin(0.5);
-        this.playerListText = this.add.text(cx, 150, 'Loading players...', { fontSize: '24px', fill: '#fff', align: 'center' }).setOrigin(0.5, 0);
+        this.add.text(cx, 80, `PARTY: ${this.roomCode}`, { fontSize: '32px', fill: '#ffff00', fontStyle: 'bold' }).setOrigin(0.5);
+        this.playerListText = this.add.text(cx, 130, 'Loading...', { fontSize: '20px', fill: '#fff', align: 'center' }).setOrigin(0.5, 0);
 
-        const readyBtn = this.add.rectangle(cx, 400, 200, 50, 0x999999).setInteractive();
-        this.readyBtnText = this.add.text(cx, 400, 'NOT READY', { fontSize: '20px', fill: '#000', fontStyle: 'bold' }).setOrigin(0.5);
+        const readyBtn = this.add.rectangle(cx, this.cameras.main.height - 150, 200, 50, 0x999999).setInteractive();
+        this.readyBtnText = this.add.text(cx, this.cameras.main.height - 150, 'NOT READY', { fontSize: '20px', fill: '#000', fontStyle: 'bold' }).setOrigin(0.5);
         
         readyBtn.on('pointerdown', () => {
             this.isReady = !this.isReady;
@@ -149,13 +140,13 @@ class LobbyScene extends Phaser.Scene {
             globalSocket.emit('toggleReady', this.isReady);
         });
 
-        this.startBtn = this.add.rectangle(cx, 500, 250, 60, 0x555555).setInteractive().setVisible(false);
-        this.startText = this.add.text(cx, 500, 'START GAME', { fontSize: '24px', fill: '#000', fontStyle: 'bold' }).setOrigin(0.5).setVisible(false);
+        this.startBtn = this.add.rectangle(cx, this.cameras.main.height - 70, 250, 60, 0x555555).setInteractive().setVisible(false);
+        this.startText = this.add.text(cx, this.cameras.main.height - 70, 'START GAME', { fontSize: '24px', fill: '#000', fontStyle: 'bold' }).setOrigin(0.5).setVisible(false);
         
         this.startBtn.on('pointerdown', () => {
             let allReady = Object.values(this.playersInLobby).every(p => p.ready);
             let gameInProgress = Object.values(this.playersInLobby).some(p => p.inGame);
-            if (gameInProgress) return alert("Wait for the current match to end!");
+            if (gameInProgress) return alert("Wait for current match to end!");
             if (!allReady) return alert("All players must be ready!");
             globalSocket.emit('startGame');
         });
@@ -174,13 +165,9 @@ class LobbyScene extends Phaser.Scene {
                 let status = p.inGame ? "(In-Game)" : (p.ready ? "🟢 READY" : "🔴 NOT READY");
                 let hostTag = p.isHost ? " [HOST]" : "";
                 list += `${p.name}${hostTag} ${status}\n`;
-                
                 if(!p.ready) allReady = false;
                 if(p.inGame) gameInProgress = true;
-                
-                if (p.name === myPlayerName && p.isHost) {
-                    amIHost = true;
-                }
+                if (p.name === myPlayerName && p.isHost) amIHost = true;
             });
             this.playerListText.setText(list);
 
@@ -226,11 +213,10 @@ class GameScene extends Phaser.Scene {
 
         this.otherPlayers = this.add.group();
         
+        // PC Fallback Controls
         this.cursors = this.input.keyboard.addKeys({
-            up: Phaser.Input.Keyboard.KeyCodes.W,
-            down: Phaser.Input.Keyboard.KeyCodes.S,
-            left: Phaser.Input.Keyboard.KeyCodes.A,
-            right: Phaser.Input.Keyboard.KeyCodes.D
+            up: Phaser.Input.Keyboard.KeyCodes.W, down: Phaser.Input.Keyboard.KeyCodes.S,
+            left: Phaser.Input.Keyboard.KeyCodes.A, right: Phaser.Input.Keyboard.KeyCodes.D
         });
 
         this.lastEmit = 0; 
@@ -242,8 +228,7 @@ class GameScene extends Phaser.Scene {
             this.bullets.add(b);
         }
 
-        this.minimapBg = this.add.rectangle(0, 0, 200, 200, 0x111111, 0.9)
-            .setScrollFactor(0).setStrokeStyle(2, 0xffffff).setDepth(50);
+        this.minimapBg = this.add.rectangle(0, 0, 150, 150, 0x111111, 0.9).setScrollFactor(0).setStrokeStyle(2, 0xffffff).setDepth(50);
         this.minimapGraphics = this.add.graphics().setScrollFactor(0).setDepth(51);
 
         this.scene.launch('UIScene', { parentScene: this });
@@ -318,71 +303,61 @@ class GameScene extends Phaser.Scene {
         });
 
         globalSocket.on('playerEliminated', (id) => this.removePlayer(id));
-        
-        globalSocket.on('matchEnded', (leaderboard) => { 
-            this.uiScene.showEndScreen(leaderboard); 
-        });
-        
-        globalSocket.on('timerUpdate', (timeString) => {
-            this.uiScene.updateTimer(timeString);
-        });
-
-        this.input.on('pointerdown', (ptr) => {
-            if (!this.ship || this.isDead || this.uiScene.isCountdown || this.uiScene.isMatchEnded) return;
-            
-            let now = Date.now();
-            if (now - this.lastFired < 1500) return;
-            this.lastFired = now;
-
-            this.sound.play('shootSound', { volume: 0.5 });
-            let worldX = ptr.x + this.cameras.main.scrollX;
-            let worldY = ptr.y + this.cameras.main.scrollY;
-            let angle = Phaser.Math.Angle.Between(this.ship.x, this.ship.y, worldX, worldY);
-            
-            let vx = Math.cos(angle) * 9, vy = Math.sin(angle) * 9;
-            
-            this.fireBullet(this.ship.x, this.ship.y, vx, vy, true);
-            globalSocket.emit('shoot', { x: this.ship.x, y: this.ship.y, vx, vy });
-        });
+        globalSocket.on('matchEnded', (leaderboard) => { this.uiScene.showEndScreen(leaderboard); });
+        globalSocket.on('timerUpdate', (timeString) => { this.uiScene.updateTimer(timeString); });
 
         setTimeout(() => { globalSocket.emit('playerReadyForMatch'); }, 200);
     }
 
+    // Called perfectly from the UIScene Mobile Controls
+    handleShoot(screenX, screenY) {
+        if (!this.ship || this.isDead || this.uiScene.isCountdown || this.uiScene.isMatchEnded) return;
+        
+        let now = Date.now();
+        if (now - this.lastFired < 1500) return;
+        this.lastFired = now;
+
+        this.sound.play('shootSound', { volume: 0.5 });
+        
+        let worldX = screenX + this.cameras.main.scrollX;
+        let worldY = screenY + this.cameras.main.scrollY;
+        
+        let angle = Phaser.Math.Angle.Between(this.ship.x, this.ship.y, worldX, worldY);
+        let vx = Math.cos(angle) * 9, vy = Math.sin(angle) * 9;
+        
+        this.fireBullet(this.ship.x, this.ship.y, vx, vy, true);
+        globalSocket.emit('shoot', { x: this.ship.x, y: this.ship.y, vx, vy });
+    }
+
     update(time) {
         if (!this.ship || this.uiScene.isCountdown || this.uiScene.isMatchEnded) return; 
-
         if (this.isDead && !this.isSpectating) return;
 
         let sw = this.cameras.main.width;
         let sh = this.cameras.main.height;
-        this.minimapBg.setPosition(sw - 120, sh - 120);
+        
+        // Responsive minimap placement
+        this.minimapBg.setPosition(sw - 90, sh - 90);
 
         let maxScore = 0;
         let leaderId = null;
         let allPlayers = this.otherPlayers.getChildren().concat(this.isDead ? [] : [this.ship]);
         
         allPlayers.forEach(p => {
-            if (p.score > maxScore) {
-                maxScore = p.score;
-                leaderId = p.playerId || globalSocket.id; 
-            }
+            if (p.score > maxScore) { maxScore = p.score; leaderId = p.playerId || globalSocket.id; }
         });
 
         this.minimapGraphics.clear();
-        let mmStartX = sw - 220; 
-        let mmStartY = sh - 220;
+        let mmStartX = sw - 165; 
+        let mmStartY = sh - 165;
 
         allPlayers.forEach(p => {
             let isLeader = (p.playerId || globalSocket.id) === leaderId && maxScore > 0;
-            
-            if (isLeader) {
-                p.crownIcon.setVisible(true).setPosition(p.x, p.y - 45);
-            } else {
-                if(p.crownIcon) p.crownIcon.setVisible(false);
-            }
+            if (isLeader) p.crownIcon.setVisible(true).setPosition(p.x, p.y - 45);
+            else if(p.crownIcon) p.crownIcon.setVisible(false);
 
-            let mx = mmStartX + (p.x / 2000) * 200;
-            let my = mmStartY + (p.y / 2000) * 200;
+            let mx = mmStartX + (p.x / 2000) * 150;
+            let my = mmStartY + (p.y / 2000) * 150;
             
             this.minimapGraphics.fillStyle(p === this.ship ? 0x00aaff : 0xff0000, 1);
             this.minimapGraphics.fillCircle(mx, my, 4);
@@ -413,10 +388,24 @@ class GameScene extends Phaser.Scene {
         const speed = this.ship.shieldAura && this.ship.shieldAura.visible ? 6 : 5; 
         let moved = false; const ox = this.ship.x, oy = this.ship.y;
         
-        if (this.cursors.left.isDown) { this.ship.x -= speed; moved = true; }
-        else if (this.cursors.right.isDown) { this.ship.x += speed; moved = true; }
-        if (this.cursors.up.isDown) { this.ship.y -= speed; moved = true; }
-        else if (this.cursors.down.isDown) { this.ship.y += speed; moved = true; }
+        // Grab Virtual Joystick Vector
+        let jx = this.uiScene.moveVector ? this.uiScene.moveVector.x : 0;
+        let jy = this.uiScene.moveVector ? this.uiScene.moveVector.y : 0;
+        
+        // Keyboard fallback
+        if (this.cursors.left.isDown) jx = -1;
+        if (this.cursors.right.isDown) jx = 1;
+        if (this.cursors.up.isDown) jy = -1;
+        if (this.cursors.down.isDown) jy = 1;
+
+        if (jx !== 0 || jy !== 0) {
+            let length = Math.sqrt(jx*jx + jy*jy);
+            if (length > 1) { jx /= length; jy /= length; } // Normalize diagonal speed
+            
+            this.ship.x += jx * speed;
+            this.ship.y += jy * speed;
+            moved = true;
+        }
 
         this.ship.x = Phaser.Math.Clamp(this.ship.x, 25, 1975);
         this.ship.y = Phaser.Math.Clamp(this.ship.y, 25, 1975);
@@ -439,44 +428,16 @@ class GameScene extends Phaser.Scene {
     }
 
     drawFace(g, colorIndex) {
-        g.clear();
-        g.lineStyle(2, 0x222222, 1);
-        g.fillStyle(0x222222, 1);
-
+        g.clear(); g.lineStyle(2, 0x222222, 1); g.fillStyle(0x222222, 1);
         switch(colorIndex) {
-            case 0: 
-                g.lineBetween(-10, -5, -4, -1); g.lineBetween(10, -5, 4, -1);  
-                g.fillCircle(-7, 2, 2); g.fillCircle(7, 2, 2);  
-                g.beginPath(); g.arc(0, 12, 6, Math.PI, 0, false); g.strokePath(); 
-                break;
-            case 1: 
-                g.lineBetween(-12, -8, -4, -2); g.lineBetween(12, -8, 4, -2);
-                g.fillCircle(-7, 2, 2); g.fillCircle(7, 2, 2);
-                g.lineBetween(-6, 12, 6, 12); 
-                break;
-            case 2: 
-                g.lineBetween(-10, -2, -4, -5); g.lineBetween(4, -2, 10, -2);
-                g.beginPath(); g.moveTo(-8, 10); g.lineTo(-4, 7); g.lineTo(0, 12); g.lineTo(4, 7); g.lineTo(8, 10); g.strokePath();
-                break;
-            case 3: 
-                g.lineBetween(-10, -2, -4, -2); g.lineBetween(4, -8, 10, -3);   
-                g.fillCircle(-7, 2, 2); g.fillCircle(7, 2, 2); g.lineBetween(-5, 10, 7, 6); 
-                break;
-            case 4: 
-                g.strokeCircle(-7, -2, 3); g.strokeCircle(7, -2, 3); g.strokeCircle(0, 10, 4); 
-                break;
-            case 5: 
-                g.lineBetween(-10, -2, -4, -2); g.lineBetween(4, -2, 10, -2);
-                g.beginPath(); g.moveTo(-6, 10); g.lineTo(-3, 8); g.lineTo(0, 12); g.lineTo(3, 8); g.lineTo(6, 10); g.strokePath();
-                break;
-            case 6: 
-                g.fillCircle(-7, -2, 4); g.fillCircle(7, -2, 4);
-                g.beginPath(); g.arc(-4, 8, 4, 0, Math.PI, false); g.arc(4, 8, 4, 0, Math.PI, false); g.strokePath();
-                break;
-            case 7: 
-                g.fillRect(-12, -6, 10, 8); g.fillRect(2, -6, 10, 8); g.lineBetween(-2, -2, 2, -2); 
-                g.beginPath(); g.arc(0, 6, 6, 0, Math.PI, false); g.strokePath();
-                break;
+            case 0: g.lineBetween(-10, -5, -4, -1); g.lineBetween(10, -5, 4, -1); g.fillCircle(-7, 2, 2); g.fillCircle(7, 2, 2); g.beginPath(); g.arc(0, 12, 6, Math.PI, 0, false); g.strokePath(); break;
+            case 1: g.lineBetween(-12, -8, -4, -2); g.lineBetween(12, -8, 4, -2); g.fillCircle(-7, 2, 2); g.fillCircle(7, 2, 2); g.lineBetween(-6, 12, 6, 12); break;
+            case 2: g.lineBetween(-10, -2, -4, -5); g.lineBetween(4, -2, 10, -2); g.beginPath(); g.moveTo(-8, 10); g.lineTo(-4, 7); g.lineTo(0, 12); g.lineTo(4, 7); g.lineTo(8, 10); g.strokePath(); break;
+            case 3: g.lineBetween(-10, -2, -4, -2); g.lineBetween(4, -8, 10, -3); g.fillCircle(-7, 2, 2); g.fillCircle(7, 2, 2); g.lineBetween(-5, 10, 7, 6); break;
+            case 4: g.strokeCircle(-7, -2, 3); g.strokeCircle(7, -2, 3); g.strokeCircle(0, 10, 4); break;
+            case 5: g.lineBetween(-10, -2, -4, -2); g.lineBetween(4, -2, 10, -2); g.beginPath(); g.moveTo(-6, 10); g.lineTo(-3, 8); g.lineTo(0, 12); g.lineTo(3, 8); g.lineTo(6, 10); g.strokePath(); break;
+            case 6: g.fillCircle(-7, -2, 4); g.fillCircle(7, -2, 4); g.beginPath(); g.arc(-4, 8, 4, 0, Math.PI, false); g.arc(4, 8, 4, 0, Math.PI, false); g.strokePath(); break;
+            case 7: g.fillRect(-12, -6, 10, 8); g.fillRect(2, -6, 10, 8); g.lineBetween(-2, -2, 2, -2); g.beginPath(); g.arc(0, 6, 6, 0, Math.PI, false); g.strokePath(); break;
         }
     }
 
@@ -525,10 +486,8 @@ class GameScene extends Phaser.Scene {
     removePlayer(id) {
         this.otherPlayers.getChildren().forEach(op => { 
             if (id === op.playerId) {
-                if(op.hpBar) op.hpBar.destroy(); 
-                if(op.hpBg) op.hpBg.destroy(); 
-                if(op.shieldAura) op.shieldAura.destroy(); 
-                if(op.crownIcon) op.crownIcon.destroy();
+                if(op.hpBar) op.hpBar.destroy(); if(op.hpBg) op.hpBg.destroy(); 
+                if(op.shieldAura) op.shieldAura.destroy(); if(op.crownIcon) op.crownIcon.destroy();
                 if(op.face) op.face.destroy();
 
                 if (this.isSpectating && this.spectateTarget === op) {
@@ -536,9 +495,7 @@ class GameScene extends Phaser.Scene {
                     if (remaining.length > 0) {
                         this.spectateTarget = remaining[0];
                         this.cameras.main.startFollow(this.spectateTarget);
-                    } else {
-                        this.spectateTarget = null;
-                    }
+                    } else { this.spectateTarget = null; }
                 }
                 op.destroy(); 
             } 
@@ -556,21 +513,23 @@ class UIScene extends Phaser.Scene {
     }
 
     create() {
-        this.add.rectangle(10, 10, 250, 200, 0x000000, 0.5).setOrigin(0,0);
-        this.add.text(20, 20, 'MATCH LEADERBOARD', { fontSize: '16px', fill: '#ffff00', fontStyle: 'bold' });
-        this.leaderboardText = this.add.text(20, 45, 'Loading...', { fontSize: '14px', fill: '#ffffff' });
+        // MOBILE FIX: Add Multi-touch support
+        this.input.addPointer(2);
 
-        this.timerText = this.add.text(this.cameras.main.centerX, 20, '05:00', { fontSize: '32px', fill: '#fff', fontStyle: 'bold' }).setOrigin(0.5);
-        
-        this.aliveText = this.add.text(this.cameras.main.width - 20, 60, 'Alive: 0', { fontSize: '20px', fill: '#fff', fontStyle: 'bold' }).setOrigin(1, 0);
+        this.add.rectangle(10, 10, 200, 150, 0x000000, 0.5).setOrigin(0,0);
+        this.add.text(20, 20, 'LEADERBOARD', { fontSize: '14px', fill: '#ffff00', fontStyle: 'bold' });
+        this.leaderboardText = this.add.text(20, 40, 'Loading...', { fontSize: '12px', fill: '#ffffff' });
+
+        this.timerText = this.add.text(this.cameras.main.centerX, 20, '05:00', { fontSize: '28px', fill: '#fff', fontStyle: 'bold' }).setOrigin(0.5);
+        this.aliveText = this.add.text(this.cameras.main.width - 20, 50, 'Alive: 0', { fontSize: '16px', fill: '#fff', fontStyle: 'bold' }).setOrigin(1, 0);
 
         this.pauseBg = this.add.rectangle(0, 0, this.cameras.main.width, this.cameras.main.height, 0x000000, 0.8).setOrigin(0,0).setVisible(false);
-        this.pauseText = this.add.text(this.cameras.main.centerX, 200, 'PAUSED', { fontSize: '48px', fill: '#fff' }).setOrigin(0.5).setVisible(false);
+        this.pauseText = this.add.text(this.cameras.main.centerX, 200, 'PAUSED', { fontSize: '36px', fill: '#fff' }).setOrigin(0.5).setVisible(false);
         
-        this.muteBtn = this.add.text(this.cameras.main.centerX, 300, 'TOGGLE MUTE', { fontSize: '24px', backgroundColor: '#444', padding: {x:10, y:5} }).setOrigin(0.5).setInteractive().setVisible(false);
+        this.muteBtn = this.add.text(this.cameras.main.centerX, 300, 'TOGGLE MUTE', { fontSize: '20px', backgroundColor: '#444', padding: {x:10, y:5} }).setOrigin(0.5).setInteractive().setVisible(false);
         this.muteBtn.on('pointerdown', () => { this.sound.mute = !this.sound.mute; this.muteBtn.setBackgroundColor(this.sound.mute ? '#800' : '#444'); });
         
-        this.exitBtn = this.add.text(this.cameras.main.centerX, 400, 'RETURN TO LOBBY', { fontSize: '24px', backgroundColor: '#800', padding: {x:10, y:5} }).setOrigin(0.5).setInteractive().setVisible(false);
+        this.exitBtn = this.add.text(this.cameras.main.centerX, 400, 'RETURN TO LOBBY', { fontSize: '20px', backgroundColor: '#800', padding: {x:10, y:5} }).setOrigin(0.5).setInteractive().setVisible(false);
         this.exitBtn.on('pointerdown', () => {
             globalSocket.emit('returnToLobby');
             this.scene.stop('GameScene');
@@ -578,7 +537,7 @@ class UIScene extends Phaser.Scene {
             this.scene.stop(); 
         });
 
-        const pauseToggle = this.add.text(this.cameras.main.width - 20, 20, '⏸ PAUSE', { fontSize: '18px', fill: '#fff', backgroundColor: '#333', padding: { x: 10, y: 5 } }).setOrigin(1, 0).setInteractive();
+        const pauseToggle = this.add.text(this.cameras.main.width - 20, 15, '⏸ PAUSE', { fontSize: '14px', fill: '#fff', backgroundColor: '#333', padding: { x: 10, y: 5 } }).setOrigin(1, 0).setInteractive();
         let isPausedLocally = false;
         pauseToggle.on('pointerdown', () => {
             if(this.isCountdown || this.gameScene.isDead || this.isMatchEnded) return;
@@ -589,7 +548,62 @@ class UIScene extends Phaser.Scene {
             this.exitBtn.setVisible(isPausedLocally);
         });
 
-        this.countdownText = this.add.text(this.cameras.main.centerX, this.cameras.main.centerY, '5', { fontSize: '100px', fill: '#fff', fontStyle: 'bold' }).setOrigin(0.5);
+        this.countdownText = this.add.text(this.cameras.main.centerX, this.cameras.main.centerY, '5', { fontSize: '80px', fill: '#fff', fontStyle: 'bold' }).setOrigin(0.5);
+
+        // --- NEW: VIRTUAL DYNAMIC JOYSTICK & TOUCH CONTROLS ---
+        this.joystickBase = this.add.circle(0, 0, 60, 0x000000, 0.4).setStrokeStyle(4, 0xffffff, 0.3).setVisible(false).setDepth(100);
+        this.joystickThumb = this.add.circle(0, 0, 30, 0xffffff, 0.6).setVisible(false).setDepth(100);
+        this.joystickPointer = null;
+        this.moveVector = { x: 0, y: 0 };
+
+        this.input.on('pointerdown', (ptr) => {
+            if (this.isCountdown || this.gameScene.isDead || this.isMatchEnded || isPausedLocally) return;
+            
+            // Left half of screen is for movement (Joystick)
+            if (ptr.x < this.cameras.main.width / 2) {
+                if (!this.joystickPointer) {
+                    this.joystickPointer = ptr;
+                    this.joystickBase.setPosition(ptr.x, ptr.y).setVisible(true);
+                    this.joystickThumb.setPosition(ptr.x, ptr.y).setVisible(true);
+                }
+            } else {
+                // Right half of screen is for shooting
+                this.gameScene.handleShoot(ptr.x, ptr.y);
+            }
+        });
+
+        this.input.on('pointermove', (ptr) => {
+            if (this.joystickPointer && ptr.id === this.joystickPointer.id) {
+                let dx = ptr.x - this.joystickBase.x;
+                let dy = ptr.y - this.joystickBase.y;
+                let dist = Math.sqrt(dx * dx + dy * dy);
+                let maxDist = 60;
+
+                // Clamp joystick visual to base radius
+                if (dist > maxDist) {
+                    dx = (dx / dist) * maxDist;
+                    dy = (dy / dist) * maxDist;
+                }
+
+                this.joystickThumb.setPosition(this.joystickBase.x + dx, this.joystickBase.y + dy);
+                
+                // Set movement vector (-1 to 1)
+                this.moveVector.x = dx / maxDist;
+                this.moveVector.y = dy / maxDist;
+            }
+        });
+
+        const resetJoystick = (ptr) => {
+            if (this.joystickPointer && ptr.id === this.joystickPointer.id) {
+                this.joystickPointer = null;
+                this.joystickBase.setVisible(false);
+                this.joystickThumb.setVisible(false);
+                this.moveVector = { x: 0, y: 0 };
+            }
+        };
+
+        this.input.on('pointerup', resetJoystick);
+        this.input.on('pointerout', resetJoystick);
     }
 
     startCountdown() {
@@ -622,9 +636,9 @@ class UIScene extends Phaser.Scene {
         if (this.isMatchEnded) return; 
         
         this.deathBg = this.add.rectangle(0, 0, this.cameras.main.width, this.cameras.main.height, 0xff0000, 0.3).setOrigin(0,0);
-        this.deathText = this.add.text(this.cameras.main.centerX, 150, 'YOU DIED', { fontSize: '64px', fill: '#ff0000', fontStyle: 'bold' }).setOrigin(0.5);
+        this.deathText = this.add.text(this.cameras.main.centerX, 150, 'YOU DIED', { fontSize: '48px', fill: '#ff0000', fontStyle: 'bold' }).setOrigin(0.5);
         
-        this.specBtn = this.add.text(this.cameras.main.centerX, 300, 'SPECTATE NEXT', { fontSize: '24px', backgroundColor: '#333', padding: {x:10, y:5} }).setOrigin(0.5).setInteractive();
+        this.specBtn = this.add.text(this.cameras.main.centerX, 250, 'SPECTATE NEXT', { fontSize: '20px', backgroundColor: '#333', padding: {x:10, y:5} }).setOrigin(0.5).setInteractive();
         this.specBtn.on('pointerdown', () => {
             let others = this.gameScene.otherPlayers.getChildren();
             if(others.length > 0) {
@@ -632,8 +646,8 @@ class UIScene extends Phaser.Scene {
                 this.deathBg.setVisible(false);
                 this.deathText.setVisible(false);
                 
-                this.specBtn.setPosition(this.cameras.main.centerX - 120, this.cameras.main.height - 50);
-                this.lobBtn.setPosition(this.cameras.main.centerX + 120, this.cameras.main.height - 50);
+                this.specBtn.setPosition(this.cameras.main.centerX - 100, this.cameras.main.height - 50);
+                this.lobBtn.setPosition(this.cameras.main.centerX + 100, this.cameras.main.height - 50);
 
                 let specTarget = others[Math.floor(Math.random() * others.length)];
                 this.gameScene.spectateTarget = specTarget;
@@ -641,7 +655,7 @@ class UIScene extends Phaser.Scene {
             }
         });
 
-        this.lobBtn = this.add.text(this.cameras.main.centerX, 400, 'RETURN TO LOBBY', { fontSize: '24px', backgroundColor: '#800', padding: {x:10, y:5} }).setOrigin(0.5).setInteractive();
+        this.lobBtn = this.add.text(this.cameras.main.centerX, 320, 'RETURN TO LOBBY', { fontSize: '20px', backgroundColor: '#800', padding: {x:10, y:5} }).setOrigin(0.5).setInteractive();
         this.lobBtn.on('pointerdown', () => {
             globalSocket.emit('returnToLobby');
             this.scene.stop('GameScene');
@@ -652,22 +666,18 @@ class UIScene extends Phaser.Scene {
 
     showEndScreen(leaderboard) {
         this.isMatchEnded = true;
+        this.add.rectangle(0, 0, this.cameras.main.width, this.cameras.main.height, 0x000000, 1.0).setOrigin(0,0).setDepth(100).setInteractive(); 
 
-        this.add.rectangle(0, 0, this.cameras.main.width, this.cameras.main.height, 0x000000, 1.0)
-            .setOrigin(0,0).setDepth(100).setInteractive(); 
-
-        this.add.text(this.cameras.main.centerX, 100, 'MATCH ENDED', { fontSize: '64px', fill: '#00ff00', fontStyle: 'bold' }).setOrigin(0.5).setDepth(101);
+        this.add.text(this.cameras.main.centerX, 100, 'MATCH ENDED', { fontSize: '48px', fill: '#00ff00', fontStyle: 'bold' }).setOrigin(0.5).setDepth(101);
         
         let winText = leaderboard.length > 0 ? `${leaderboard[0].name} WINS!` : "DRAW!";
-        this.add.text(this.cameras.main.centerX, 180, winText, { fontSize: '48px', fill: '#ffff00' }).setOrigin(0.5).setDepth(101);
+        this.add.text(this.cameras.main.centerX, 160, winText, { fontSize: '36px', fill: '#ffff00' }).setOrigin(0.5).setDepth(101);
         
         let boardText = "";
-        leaderboard.forEach((p, i) => {
-            boardText += `${i+1}. ${p.name} - ${p.score} pts (${p.deaths} D)\n`;
-        });
-        this.add.text(this.cameras.main.centerX, 300, boardText, { fontSize: '28px', fill: '#fff', align: 'center' }).setOrigin(0.5, 0).setDepth(101);
+        leaderboard.forEach((p, i) => { boardText += `${i+1}. ${p.name} - ${p.score} pts (${p.deaths} D)\n`; });
+        this.add.text(this.cameras.main.centerX, 250, boardText, { fontSize: '20px', fill: '#fff', align: 'center' }).setOrigin(0.5, 0).setDepth(101);
 
-        this.add.text(this.cameras.main.centerX, this.cameras.main.height - 100, 'Returning to Lobby...', { fontSize: '24px', fill: '#aaa' }).setOrigin(0.5).setDepth(101);
+        this.add.text(this.cameras.main.centerX, this.cameras.main.height - 60, 'Returning to Lobby...', { fontSize: '18px', fill: '#aaa' }).setOrigin(0.5).setDepth(101);
 
         setTimeout(() => {
              globalSocket.emit('returnToLobby');
