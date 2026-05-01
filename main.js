@@ -210,11 +210,20 @@ class GameScene extends Phaser.Scene {
     preload() {
         this.load.audio('shootSound', 'https://labs.phaser.io/assets/audio/SoundEffects/blaster.mp3');
         this.load.audio('hitSound', 'https://labs.phaser.io/assets/audio/SoundEffects/squit.wav');
+        // NEW: Engaging Retro Arcade Background Music
+        this.load.audio('bgm', 'https://labs.phaser.io/assets/audio/oedipus_wizball_highscore.mp3'); 
     }
 
     create() {
         this.cameras.main.setBounds(0, 0, 2000, 2000);
         this.add.grid(1000, 1000, 2000, 2000, 50, 50, 0x000000, 1, 0x222222, 1);
+
+        // Play BGM at 15% volume, looping indefinitely
+        this.bgm = this.sound.add('bgm', { volume: 0.15, loop: true });
+        this.bgm.play();
+        
+        // Ensure music stops cleanly when returning to the lobby
+        this.events.on('shutdown', () => { if (this.bgm) this.bgm.stop(); });
 
         this.otherPlayers = this.add.group();
         
@@ -258,7 +267,6 @@ class GameScene extends Phaser.Scene {
                 if (pInfo.id === op.playerId) {
                     this.tweens.killTweensOf(op);
                     this.tweens.add({ targets: [op, op.hpBar, op.hpBg, op.shieldAura, op.crownIcon, op.face], x: pInfo.x, y: pInfo.y, duration: 50, ease: 'Linear' });
-                    // Rotate enemy faces so they look where they are going
                     if (op.face) op.face.rotation = pInfo.angle || 0;
                 }
             });
@@ -302,13 +310,10 @@ class GameScene extends Phaser.Scene {
         globalSocket.on('matchEnded', (leaderboard) => { this.uiScene.showEndScreen(leaderboard); });
         globalSocket.on('timerUpdate', (timeString) => { this.uiScene.updateTimer(timeString); });
 
-        // DESKTOP ONLY: Mouse Click to shoot
         this.input.on('pointerdown', (ptr) => {
-            // Ignore if on mobile (mobile uses the dedicated UI fire button)
-            if (!this.sys.game.device.os.desktop) return; 
+            if (this.uiScene.hasTouch) return; // Ignore on touch devices (they use the UI button)
 
             if (!this.ship || this.isDead || this.uiScene.isCountdown || this.uiScene.isMatchEnded) return;
-            
             let now = Date.now();
             if (now - this.lastFired < 1500) return;
             this.lastFired = now;
@@ -316,16 +321,12 @@ class GameScene extends Phaser.Scene {
             this.sound.play('shootSound', { volume: 0.5 });
             let worldX = ptr.x + this.cameras.main.scrollX;
             let worldY = ptr.y + this.cameras.main.scrollY;
-            
-            // Aim at mouse cursor
             let angle = Phaser.Math.Angle.Between(this.ship.x, this.ship.y, worldX, worldY);
             
-            // Rotate ship to face where it shot
             this.ship.facingAngle = angle;
             if (this.ship.face) this.ship.face.rotation = angle;
             
             let vx = Math.cos(angle) * 9, vy = Math.sin(angle) * 9;
-            
             this.fireBullet(this.ship.x, this.ship.y, vx, vy, true);
             globalSocket.emit('shoot', { x: this.ship.x, y: this.ship.y, vx, vy });
             globalSocket.emit('playerMovement', { x: this.ship.x, y: this.ship.y, angle: this.ship.facingAngle });
@@ -334,17 +335,14 @@ class GameScene extends Phaser.Scene {
         setTimeout(() => { globalSocket.emit('playerReadyForMatch'); }, 200);
     }
 
-    // MOBILE ONLY: Fire button calls this to shoot exactly where the player is looking
     handleMobileShoot() {
         if (!this.ship || this.isDead || this.uiScene.isCountdown || this.uiScene.isMatchEnded) return;
-        
         let now = Date.now();
         if (now - this.lastFired < 1500) return;
         this.lastFired = now;
 
         this.sound.play('shootSound', { volume: 0.5 });
         
-        // Shoot in the direction the ship is currently facing
         let vx = Math.cos(this.ship.facingAngle) * 9;
         let vy = Math.sin(this.ship.facingAngle) * 9;
         
@@ -402,13 +400,11 @@ class GameScene extends Phaser.Scene {
         
         let jx = 0, jy = 0;
         
-        // Get Mobile Joystick Input
-        if (!this.sys.game.device.os.desktop && this.uiScene.moveVector) {
+        if (this.uiScene.hasTouch && this.uiScene.moveVector) {
             jx = this.uiScene.moveVector.x;
             jy = this.uiScene.moveVector.y;
         }
 
-        // Get PC Keyboard Input
         if (this.cursors.left.isDown) jx = -1;
         if (this.cursors.right.isDown) jx = 1;
         if (this.cursors.up.isDown) jy = -1;
@@ -421,7 +417,6 @@ class GameScene extends Phaser.Scene {
             this.ship.x += jx * speed;
             this.ship.y += jy * speed;
             
-            // NEW: Rotate the player's facing angle based on movement direction
             this.ship.facingAngle = Math.atan2(jy, jx);
             if (this.ship.face) this.ship.face.rotation = this.ship.facingAngle;
 
@@ -464,7 +459,7 @@ class GameScene extends Phaser.Scene {
 
     addMe(scene, info) { 
         scene.ship = scene.add.rectangle(info.x, info.y, 50, 50, GAME_COLORS[info.colorIndex]); 
-        scene.ship.facingAngle = 0; // Default facing right
+        scene.ship.facingAngle = 0; 
         scene.ship.face = scene.add.graphics({ x: info.x, y: info.y }).setDepth(5);
         this.drawFace(scene.ship.face, info.colorIndex);
         scene.ship.shieldAura = scene.add.circle(info.x, info.y, 35, 0xffffff, 0.4).setVisible(true);
@@ -569,54 +564,46 @@ class UIScene extends Phaser.Scene {
 
         this.countdownText = this.add.text(this.cameras.main.centerX, this.cameras.main.centerY, '5', { fontSize: '80px', fill: '#fff', fontStyle: 'bold' }).setOrigin(0.5);
 
-        // NATIVE PLATFORM DETECTION
-        this.isDesktop = this.sys.game.device.os.desktop;
+        // FOOLPROOF DETECTION: This checks hardware capabilities directly. 
+        // Bypasses all fake "Desktop Site" browser bugs.
+        this.hasTouch = this.sys.game.device.input.touch;
 
-        if (!this.isDesktop) {
+        if (this.hasTouch) {
             this.input.addPointer(3); // Support multi-touch
             this.moveVector = { x: 0, y: 0 };
 
-            // 1. Explicit Joystick (Bottom Left)
-            this.joyBaseX = 100;
-            this.joyBaseY = this.cameras.main.height - 100;
-            this.joystickBase = this.add.circle(this.joyBaseX, this.joyBaseY, 60, 0x555555, 0.5).setStrokeStyle(4, 0xffffff, 0.8).setDepth(100).setScrollFactor(0);
-            this.joystickThumb = this.add.circle(this.joyBaseX, this.joyBaseY, 30, 0xffffff, 1).setDepth(100).setScrollFactor(0);
+            // Dynamic Joystick
+            this.joystickBase = this.add.circle(0, 0, 60, 0x555555, 0.5).setStrokeStyle(4, 0xffffff, 0.8).setDepth(100).setScrollFactor(0).setVisible(false);
+            this.joystickThumb = this.add.circle(0, 0, 30, 0xffffff, 1).setDepth(100).setScrollFactor(0).setVisible(false);
+            this.joystickPointer = null;
 
-            // 2. Explicit Fire Button (Bottom Right)
-            this.fireBtnX = this.cameras.main.width - 100;
-            this.fireBtnY = this.cameras.main.height - 100;
+            // Firing Button
+            this.fireBtnX = this.cameras.main.width - 80;
+            this.fireBtnY = this.cameras.main.height - 80;
             this.fireBtn = this.add.circle(this.fireBtnX, this.fireBtnY, 50, 0xff0000, 0.6).setStrokeStyle(4, 0xffffff, 0.8).setDepth(100).setScrollFactor(0).setInteractive();
             this.fireText = this.add.text(this.fireBtnX, this.fireBtnY, 'FIRE', { fontSize: '24px', fill: '#fff', fontStyle: 'bold' }).setOrigin(0.5).setDepth(101).setScrollFactor(0);
 
-            // Hook up the fire button
             this.fireBtn.on('pointerdown', () => {
                 if (!this.isPausedLocally) this.gameScene.handleMobileShoot();
             });
-        }
-    }
 
-    update() {
-        if (this.isCountdown || this.gameScene.isDead || this.isMatchEnded || this.isPausedLocally) return;
+            // Joystick Logic
+            this.input.on('pointerdown', (ptr) => {
+                if (this.isCountdown || this.gameScene.isDead || this.isMatchEnded || this.isPausedLocally) return;
+                
+                // Touch on the left half spawns the joystick right under your thumb
+                if (ptr.x < this.cameras.main.width / 2 && !this.joystickPointer) {
+                    this.joystickPointer = ptr;
+                    this.joystickBase.setPosition(ptr.x, ptr.y).setVisible(true);
+                    this.joystickThumb.setPosition(ptr.x, ptr.y).setVisible(true);
+                    this.moveVector = { x: 0, y: 0 };
+                }
+            });
 
-        // Only run Mobile UI tracking if it is NOT desktop
-        if (!this.isDesktop) {
-            // Anchor strictly to bottom corners
-            this.joyBaseX = 100;
-            this.joyBaseY = this.cameras.main.height - 100;
-            this.joystickBase.setPosition(this.joyBaseX, this.joyBaseY);
-
-            this.fireBtnX = this.cameras.main.width - 100;
-            this.fireBtnY = this.cameras.main.height - 100;
-            this.fireBtn.setPosition(this.fireBtnX, this.fireBtnY);
-            this.fireText.setPosition(this.fireBtnX, this.fireBtnY);
-
-            let joystickActive = false;
-
-            for (let ptr of this.input.pointers) {
-                // Joystick only listens to the left half of the screen
-                if (ptr.isDown && ptr.x < this.cameras.main.width / 2) {
-                    let dx = ptr.x - this.joyBaseX;
-                    let dy = ptr.y - this.joyBaseY;
+            this.input.on('pointermove', (ptr) => {
+                if (this.joystickPointer && ptr.id === this.joystickPointer.id) {
+                    let dx = ptr.x - this.joystickBase.x;
+                    let dy = ptr.y - this.joystickBase.y;
                     let dist = Math.sqrt(dx * dx + dy * dy);
                     let maxDist = 60; 
 
@@ -625,19 +612,34 @@ class UIScene extends Phaser.Scene {
                         dy = (dy / dist) * maxDist;
                     }
 
-                    this.joystickThumb.setPosition(this.joyBaseX + dx, this.joyBaseY + dy);
+                    this.joystickThumb.setPosition(this.joystickBase.x + dx, this.joystickBase.y + dy);
                     this.moveVector.x = dx / maxDist;
                     this.moveVector.y = dy / maxDist;
-                    joystickActive = true;
-                    break; 
                 }
-            }
+            });
 
-            if (!joystickActive) {
-                this.joystickThumb.setPosition(this.joyBaseX, this.joyBaseY);
-                this.moveVector.x = 0;
-                this.moveVector.y = 0;
-            }
+            const resetJoy = (ptr) => {
+                if (this.joystickPointer && ptr.id === this.joystickPointer.id) {
+                    this.joystickPointer = null;
+                    this.joystickBase.setVisible(false);
+                    this.joystickThumb.setVisible(false);
+                    this.moveVector = { x: 0, y: 0 };
+                }
+            };
+
+            this.input.on('pointerup', resetJoy);
+            this.input.on('pointerout', resetJoy);
+        }
+    }
+
+    update() {
+        if (this.isCountdown || this.gameScene.isDead || this.isMatchEnded || this.isPausedLocally) return;
+
+        if (this.hasTouch) {
+            this.fireBtnX = this.cameras.main.width - 80;
+            this.fireBtnY = this.cameras.main.height - 80;
+            this.fireBtn.setPosition(this.fireBtnX, this.fireBtnY);
+            this.fireText.setPosition(this.fireBtnX, this.fireBtnY);
         }
     }
 
