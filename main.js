@@ -218,7 +218,7 @@ class GameScene extends Phaser.Scene {
 
         this.otherPlayers = this.add.group();
         
-        // PC Fallback Controls
+        // PC Controls
         this.cursors = this.input.keyboard.addKeys({
             up: Phaser.Input.Keyboard.KeyCodes.W, down: Phaser.Input.Keyboard.KeyCodes.S,
             left: Phaser.Input.Keyboard.KeyCodes.A, right: Phaser.Input.Keyboard.KeyCodes.D
@@ -239,15 +239,9 @@ class GameScene extends Phaser.Scene {
         this.scene.launch('UIScene', { parentScene: this });
         this.uiScene = this.scene.get('UIScene');
         
-        globalSocket.off('matchInit');
-        globalSocket.off('playerMoved');
-        globalSocket.off('playerShot');
-        globalSocket.off('gameStateUpdate');
-        globalSocket.off('playerHit');
-        globalSocket.off('youDied');
-        globalSocket.off('playerEliminated');
-        globalSocket.off('matchEnded');
-        globalSocket.off('timerUpdate');
+        globalSocket.off('matchInit'); globalSocket.off('playerMoved'); globalSocket.off('playerShot');
+        globalSocket.off('gameStateUpdate'); globalSocket.off('playerHit'); globalSocket.off('youDied');
+        globalSocket.off('playerEliminated'); globalSocket.off('matchEnded'); globalSocket.off('timerUpdate');
 
         globalSocket.on('matchInit', (data) => {
             this.uiScene.startCountdown();
@@ -264,6 +258,8 @@ class GameScene extends Phaser.Scene {
                 if (pInfo.id === op.playerId) {
                     this.tweens.killTweensOf(op);
                     this.tweens.add({ targets: [op, op.hpBar, op.hpBg, op.shieldAura, op.crownIcon, op.face], x: pInfo.x, y: pInfo.y, duration: 50, ease: 'Linear' });
+                    // Rotate enemy faces so they look where they are going
+                    if (op.face) op.face.rotation = pInfo.angle || 0;
                 }
             });
         });
@@ -292,17 +288,12 @@ class GameScene extends Phaser.Scene {
             });
         });
 
-        globalSocket.on('playerHit', () => { 
-            if (!(this.isDead && !this.isSpectating)) this.sound.play('hitSound', { volume: 0.8 }); 
-        });
-
+        globalSocket.on('playerHit', () => { if (!(this.isDead && !this.isSpectating)) this.sound.play('hitSound', { volume: 0.8 }); });
         globalSocket.on('youDied', () => {
             this.isDead = true;
             this.ship.setVisible(false).setActive(false);
-            this.ship.hpBar.setVisible(false);
-            this.ship.hpBg.setVisible(false);
-            this.ship.shieldAura.setVisible(false);
-            this.ship.crownIcon.setVisible(false);
+            this.ship.hpBar.setVisible(false); this.ship.hpBg.setVisible(false);
+            this.ship.shieldAura.setVisible(false); this.ship.crownIcon.setVisible(false);
             if(this.ship.face) this.ship.face.setVisible(false);
             this.uiScene.showDeathScreen();
         });
@@ -311,11 +302,40 @@ class GameScene extends Phaser.Scene {
         globalSocket.on('matchEnded', (leaderboard) => { this.uiScene.showEndScreen(leaderboard); });
         globalSocket.on('timerUpdate', (timeString) => { this.uiScene.updateTimer(timeString); });
 
+        // DESKTOP ONLY: Mouse Click to shoot
+        this.input.on('pointerdown', (ptr) => {
+            // Ignore if on mobile (mobile uses the dedicated UI fire button)
+            if (!this.sys.game.device.os.desktop) return; 
+
+            if (!this.ship || this.isDead || this.uiScene.isCountdown || this.uiScene.isMatchEnded) return;
+            
+            let now = Date.now();
+            if (now - this.lastFired < 1500) return;
+            this.lastFired = now;
+
+            this.sound.play('shootSound', { volume: 0.5 });
+            let worldX = ptr.x + this.cameras.main.scrollX;
+            let worldY = ptr.y + this.cameras.main.scrollY;
+            
+            // Aim at mouse cursor
+            let angle = Phaser.Math.Angle.Between(this.ship.x, this.ship.y, worldX, worldY);
+            
+            // Rotate ship to face where it shot
+            this.ship.facingAngle = angle;
+            if (this.ship.face) this.ship.face.rotation = angle;
+            
+            let vx = Math.cos(angle) * 9, vy = Math.sin(angle) * 9;
+            
+            this.fireBullet(this.ship.x, this.ship.y, vx, vy, true);
+            globalSocket.emit('shoot', { x: this.ship.x, y: this.ship.y, vx, vy });
+            globalSocket.emit('playerMovement', { x: this.ship.x, y: this.ship.y, angle: this.ship.facingAngle });
+        });
+
         setTimeout(() => { globalSocket.emit('playerReadyForMatch'); }, 200);
     }
 
-    // Called perfectly from the UIScene Mobile Controls
-    handleShoot(screenX, screenY) {
+    // MOBILE ONLY: Fire button calls this to shoot exactly where the player is looking
+    handleMobileShoot() {
         if (!this.ship || this.isDead || this.uiScene.isCountdown || this.uiScene.isMatchEnded) return;
         
         let now = Date.now();
@@ -324,11 +344,9 @@ class GameScene extends Phaser.Scene {
 
         this.sound.play('shootSound', { volume: 0.5 });
         
-        let worldX = screenX + this.cameras.main.scrollX;
-        let worldY = screenY + this.cameras.main.scrollY;
-        
-        let angle = Phaser.Math.Angle.Between(this.ship.x, this.ship.y, worldX, worldY);
-        let vx = Math.cos(angle) * 9, vy = Math.sin(angle) * 9;
+        // Shoot in the direction the ship is currently facing
+        let vx = Math.cos(this.ship.facingAngle) * 9;
+        let vy = Math.sin(this.ship.facingAngle) * 9;
         
         this.fireBullet(this.ship.x, this.ship.y, vx, vy, true);
         globalSocket.emit('shoot', { x: this.ship.x, y: this.ship.y, vx, vy });
@@ -340,37 +358,26 @@ class GameScene extends Phaser.Scene {
 
         let sw = this.cameras.main.width;
         let sh = this.cameras.main.height;
-        
-        // Responsive minimap placement
         this.minimapBg.setPosition(sw - 90, sh - 90);
 
-        let maxScore = 0;
-        let leaderId = null;
+        let maxScore = 0; let leaderId = null;
         let allPlayers = this.otherPlayers.getChildren().concat(this.isDead ? [] : [this.ship]);
         
-        allPlayers.forEach(p => {
-            if (p.score > maxScore) { maxScore = p.score; leaderId = p.playerId || globalSocket.id; }
-        });
+        allPlayers.forEach(p => { if (p.score > maxScore) { maxScore = p.score; leaderId = p.playerId || globalSocket.id; }});
 
         this.minimapGraphics.clear();
-        let mmStartX = sw - 165; 
-        let mmStartY = sh - 165;
+        let mmStartX = sw - 165; let mmStartY = sh - 165;
 
         allPlayers.forEach(p => {
             let isLeader = (p.playerId || globalSocket.id) === leaderId && maxScore > 0;
             if (isLeader) p.crownIcon.setVisible(true).setPosition(p.x, p.y - 45);
             else if(p.crownIcon) p.crownIcon.setVisible(false);
 
-            let mx = mmStartX + (p.x / 2000) * 150;
-            let my = mmStartY + (p.y / 2000) * 150;
-            
+            let mx = mmStartX + (p.x / 2000) * 150; let my = mmStartY + (p.y / 2000) * 150;
             this.minimapGraphics.fillStyle(p === this.ship ? 0x00aaff : 0xff0000, 1);
             this.minimapGraphics.fillCircle(mx, my, 4);
 
-            if (isLeader) {
-                this.minimapGraphics.fillStyle(0xffff00, 1);
-                this.minimapGraphics.fillTriangle(mx - 6, my - 6, mx + 6, my - 6, mx, my - 14);
-            }
+            if (isLeader) { this.minimapGraphics.fillStyle(0xffff00, 1); this.minimapGraphics.fillTriangle(mx-6, my-6, mx+6, my-6, mx, my-14); }
         });
 
         this.bullets.getChildren().forEach(b => {
@@ -393,11 +400,15 @@ class GameScene extends Phaser.Scene {
         const speed = this.ship.shieldAura && this.ship.shieldAura.visible ? 6 : 5; 
         let moved = false; const ox = this.ship.x, oy = this.ship.y;
         
-        // Grab Virtual Joystick Vector
-        let jx = this.uiScene.moveVector ? this.uiScene.moveVector.x : 0;
-        let jy = this.uiScene.moveVector ? this.uiScene.moveVector.y : 0;
+        let jx = 0, jy = 0;
         
-        // Keyboard fallback
+        // Get Mobile Joystick Input
+        if (!this.sys.game.device.os.desktop && this.uiScene.moveVector) {
+            jx = this.uiScene.moveVector.x;
+            jy = this.uiScene.moveVector.y;
+        }
+
+        // Get PC Keyboard Input
         if (this.cursors.left.isDown) jx = -1;
         if (this.cursors.right.isDown) jx = 1;
         if (this.cursors.up.isDown) jy = -1;
@@ -405,10 +416,15 @@ class GameScene extends Phaser.Scene {
 
         if (jx !== 0 || jy !== 0) {
             let length = Math.sqrt(jx*jx + jy*jy);
-            if (length > 1) { jx /= length; jy /= length; } // Normalize diagonal speed
+            if (length > 1) { jx /= length; jy /= length; } 
             
             this.ship.x += jx * speed;
             this.ship.y += jy * speed;
+            
+            // NEW: Rotate the player's facing angle based on movement direction
+            this.ship.facingAngle = Math.atan2(jy, jx);
+            if (this.ship.face) this.ship.face.rotation = this.ship.facingAngle;
+
             moved = true;
         }
 
@@ -421,7 +437,7 @@ class GameScene extends Phaser.Scene {
             if(this.ship.face) this.ship.face.setPosition(this.ship.x, this.ship.y);
 
             if (time > this.lastEmit + 50 && (this.ship.x !== ox || this.ship.y !== oy)) {
-                globalSocket.emit('playerMovement', { x: this.ship.x, y: this.ship.y });
+                globalSocket.emit('playerMovement', { x: this.ship.x, y: this.ship.y, angle: this.ship.facingAngle });
                 this.lastEmit = time;
             }
         }
@@ -448,6 +464,7 @@ class GameScene extends Phaser.Scene {
 
     addMe(scene, info) { 
         scene.ship = scene.add.rectangle(info.x, info.y, 50, 50, GAME_COLORS[info.colorIndex]); 
+        scene.ship.facingAngle = 0; // Default facing right
         scene.ship.face = scene.add.graphics({ x: info.x, y: info.y }).setDepth(5);
         this.drawFace(scene.ship.face, info.colorIndex);
         scene.ship.shieldAura = scene.add.circle(info.x, info.y, 35, 0xffffff, 0.4).setVisible(true);
@@ -518,8 +535,6 @@ class UIScene extends Phaser.Scene {
     }
 
     create() {
-        this.input.addPointer(3); 
-
         this.add.rectangle(10, 10, 200, 150, 0x000000, 0.5).setOrigin(0,0);
         this.add.text(20, 20, 'LEADERBOARD', { fontSize: '14px', fill: '#ffff00', fontStyle: 'bold' });
         this.leaderboardText = this.add.text(20, 40, 'Loading...', { fontSize: '12px', fill: '#ffffff' });
@@ -554,67 +569,143 @@ class UIScene extends Phaser.Scene {
 
         this.countdownText = this.add.text(this.cameras.main.centerX, this.cameras.main.centerY, '5', { fontSize: '80px', fill: '#fff', fontStyle: 'bold' }).setOrigin(0.5);
 
-        // --- BRIGHT NEON JOYSTICK (Impossible to miss) ---
-        this.joyBaseX = 100; 
-        this.joyBaseY = this.sys.game.scale.gameSize.height - 100; // Bulletproof anchoring
-        
-        // Made it bright blue so it stands out perfectly
-        this.joystickBase = this.add.circle(this.joyBaseX, this.joyBaseY, 60, 0x00aaff, 0.3).setStrokeStyle(4, 0x00aaff, 0.8).setDepth(100).setScrollFactor(0);
-        this.joystickThumb = this.add.circle(this.joyBaseX, this.joyBaseY, 30, 0xffffff, 1).setDepth(100).setScrollFactor(0);
-        this.moveVector = { x: 0, y: 0 };
+        // NATIVE PLATFORM DETECTION
+        this.isDesktop = this.sys.game.device.os.desktop;
 
-        this.input.on('pointerdown', (ptr) => {
-            if (this.isCountdown || this.gameScene.isDead || this.isMatchEnded || this.isPausedLocally) return;
+        if (!this.isDesktop) {
+            this.input.addPointer(3); // Support multi-touch
+            this.moveVector = { x: 0, y: 0 };
 
-            const isRightHalf = ptr.x > this.cameras.main.width / 2;
-            const isTopHalf = ptr.y < this.cameras.main.height * 0.5;
+            // 1. Explicit Joystick (Bottom Left)
+            this.joyBaseX = 100;
+            this.joyBaseY = this.cameras.main.height - 100;
+            this.joystickBase = this.add.circle(this.joyBaseX, this.joyBaseY, 60, 0x555555, 0.5).setStrokeStyle(4, 0xffffff, 0.8).setDepth(100).setScrollFactor(0);
+            this.joystickThumb = this.add.circle(this.joyBaseX, this.joyBaseY, 30, 0xffffff, 1).setDepth(100).setScrollFactor(0);
 
-            if (isRightHalf || isTopHalf) {
-                this.gameScene.handleShoot(ptr.x, ptr.y);
-            }
-        });
+            // 2. Explicit Fire Button (Bottom Right)
+            this.fireBtnX = this.cameras.main.width - 100;
+            this.fireBtnY = this.cameras.main.height - 100;
+            this.fireBtn = this.add.circle(this.fireBtnX, this.fireBtnY, 50, 0xff0000, 0.6).setStrokeStyle(4, 0xffffff, 0.8).setDepth(100).setScrollFactor(0).setInteractive();
+            this.fireText = this.add.text(this.fireBtnX, this.fireBtnY, 'FIRE', { fontSize: '24px', fill: '#fff', fontStyle: 'bold' }).setOrigin(0.5).setDepth(101).setScrollFactor(0);
+
+            // Hook up the fire button
+            this.fireBtn.on('pointerdown', () => {
+                if (!this.isPausedLocally) this.gameScene.handleMobileShoot();
+            });
+        }
     }
 
     update() {
         if (this.isCountdown || this.gameScene.isDead || this.isMatchEnded || this.isPausedLocally) return;
 
-        // Force it to constantly snap to the true bottom left of the phone screen
-        this.joyBaseX = 100;
-        this.joyBaseY = this.sys.game.scale.gameSize.height - 100;
-        this.joystickBase.setPosition(this.joyBaseX, this.joyBaseY);
+        // Only run Mobile UI tracking if it is NOT desktop
+        if (!this.isDesktop) {
+            // Anchor strictly to bottom corners
+            this.joyBaseX = 100;
+            this.joyBaseY = this.cameras.main.height - 100;
+            this.joystickBase.setPosition(this.joyBaseX, this.joyBaseY);
 
-        let joystickActive = false;
+            this.fireBtnX = this.cameras.main.width - 100;
+            this.fireBtnY = this.cameras.main.height - 100;
+            this.fireBtn.setPosition(this.fireBtnX, this.fireBtnY);
+            this.fireText.setPosition(this.fireBtnX, this.fireBtnY);
 
-        for (let ptr of this.input.pointers) {
-            const isBottomLeft = ptr.x < this.cameras.main.width / 2 && ptr.y > this.cameras.main.height * 0.5;
+            let joystickActive = false;
 
-            if (ptr.isDown && isBottomLeft) {
-                let dx = ptr.x - this.joyBaseX;
-                let dy = ptr.y - this.joyBaseY;
-                let dist = Math.sqrt(dx * dx + dy * dy);
-                let maxDist = 60; 
+            for (let ptr of this.input.pointers) {
+                // Joystick only listens to the left half of the screen
+                if (ptr.isDown && ptr.x < this.cameras.main.width / 2) {
+                    let dx = ptr.x - this.joyBaseX;
+                    let dy = ptr.y - this.joyBaseY;
+                    let dist = Math.sqrt(dx * dx + dy * dy);
+                    let maxDist = 60; 
 
-                if (dist > maxDist) {
-                    dx = (dx / dist) * maxDist;
-                    dy = (dy / dist) * maxDist;
+                    if (dist > maxDist) {
+                        dx = (dx / dist) * maxDist;
+                        dy = (dy / dist) * maxDist;
+                    }
+
+                    this.joystickThumb.setPosition(this.joyBaseX + dx, this.joyBaseY + dy);
+                    this.moveVector.x = dx / maxDist;
+                    this.moveVector.y = dy / maxDist;
+                    joystickActive = true;
+                    break; 
                 }
-
-                this.joystickThumb.setPosition(this.joyBaseX + dx, this.joyBaseY + dy);
-                this.moveVector.x = dx / maxDist;
-                this.moveVector.y = dy / maxDist;
-                joystickActive = true;
-                break; 
             }
-        }
 
-        if (!joystickActive) {
-            this.joystickThumb.setPosition(this.joyBaseX, this.joyBaseY);
-            this.moveVector.x = 0;
-            this.moveVector.y = 0;
+            if (!joystickActive) {
+                this.joystickThumb.setPosition(this.joyBaseX, this.joyBaseY);
+                this.moveVector.x = 0;
+                this.moveVector.y = 0;
+            }
         }
     }
 
-    // ... [Keep your startCountdown, updateLeaderboard, showDeathScreen, showEndScreen identical here]
+    startCountdown() {
+        let count = 5;
+        let intv = setInterval(() => {
+            count--;
+            if(count > 0) this.countdownText.setText(count);
+            else {
+                clearInterval(intv);
+                this.countdownText.setText('FIGHT!');
+                setTimeout(() => { this.countdownText.setVisible(false); this.isCountdown = false; }, 1000);
+            }
+        }, 1000);
+    }
+
+    updateLeaderboard(playersArray) {
+        let text = ""; let aliveCount = 0;
+        playersArray.forEach((p, i) => { text += `${i+1}. ${p.name} - ${p.score}pts (${p.deaths} D)\n`; if (p.hp > 0) aliveCount++; });
+        this.leaderboardText.setText(text); this.aliveText.setText(`Alive: ${aliveCount}`);
+    }
+
+    updateTimer(timeStr) { this.timerText.setText(timeStr); }
+
+    showDeathScreen() {
+        if (this.isMatchEnded) return; 
+        
+        this.deathBg = this.add.rectangle(0, 0, this.cameras.main.width, this.cameras.main.height, 0xff0000, 0.3).setOrigin(0,0);
+        this.deathText = this.add.text(this.cameras.main.centerX, 150, 'YOU DIED', { fontSize: '48px', fill: '#ff0000', fontStyle: 'bold' }).setOrigin(0.5);
+        
+        this.specBtn = this.add.text(this.cameras.main.centerX, 250, 'SPECTATE NEXT', { fontSize: '20px', backgroundColor: '#333', padding: {x:10, y:5} }).setOrigin(0.5).setInteractive();
+        this.specBtn.on('pointerdown', () => {
+            let others = this.gameScene.otherPlayers.getChildren();
+            if(others.length > 0) {
+                this.gameScene.isSpectating = true;
+                this.deathBg.setVisible(false); this.deathText.setVisible(false);
+                this.specBtn.setPosition(this.cameras.main.centerX - 100, this.cameras.main.height - 50);
+                this.lobBtn.setPosition(this.cameras.main.centerX + 100, this.cameras.main.height - 50);
+
+                let specTarget = others[Math.floor(Math.random() * others.length)];
+                this.gameScene.spectateTarget = specTarget;
+                this.gameScene.cameras.main.startFollow(specTarget);
+            }
+        });
+
+        this.lobBtn = this.add.text(this.cameras.main.centerX, 320, 'RETURN TO LOBBY', { fontSize: '20px', backgroundColor: '#800', padding: {x:10, y:5} }).setOrigin(0.5).setInteractive();
+        this.lobBtn.on('pointerdown', () => {
+            globalSocket.emit('returnToLobby');
+            this.scene.stop('GameScene'); this.scene.start('LobbyScene', { roomCode: this.gameScene.roomCode }); this.scene.stop();
+        });
+    }
+
+    showEndScreen(leaderboard) {
+        this.isMatchEnded = true;
+        this.add.rectangle(0, 0, this.cameras.main.width, this.cameras.main.height, 0x000000, 1.0).setOrigin(0,0).setDepth(100).setInteractive(); 
+
+        this.add.text(this.cameras.main.centerX, 100, 'MATCH ENDED', { fontSize: '48px', fill: '#00ff00', fontStyle: 'bold' }).setOrigin(0.5).setDepth(101);
+        let winText = leaderboard.length > 0 ? `${leaderboard[0].name} WINS!` : "DRAW!";
+        this.add.text(this.cameras.main.centerX, 160, winText, { fontSize: '36px', fill: '#ffff00' }).setOrigin(0.5).setDepth(101);
+        
+        let boardText = ""; leaderboard.forEach((p, i) => { boardText += `${i+1}. ${p.name} - ${p.score} pts (${p.deaths} D)\n`; });
+        this.add.text(this.cameras.main.centerX, 250, boardText, { fontSize: '20px', fill: '#fff', align: 'center' }).setOrigin(0.5, 0).setDepth(101);
+        this.add.text(this.cameras.main.centerX, this.cameras.main.height - 60, 'Returning to Lobby...', { fontSize: '18px', fill: '#aaa' }).setOrigin(0.5).setDepth(101);
+
+        setTimeout(() => { globalSocket.emit('returnToLobby'); this.scene.stop('GameScene'); this.scene.start('LobbyScene', { roomCode: this.gameScene.roomCode }); this.scene.stop(); }, 8000);
+    }
+}
+
 const config = { 
     type: Phaser.AUTO, 
     scale: { mode: Phaser.Scale.RESIZE, width: '100%', height: '100%' }, 
