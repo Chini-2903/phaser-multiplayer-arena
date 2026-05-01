@@ -513,8 +513,8 @@ class UIScene extends Phaser.Scene {
     }
 
     create() {
-        // MOBILE FIX: Add Multi-touch support
-        this.input.addPointer(2);
+        // BULLETPROOF FIX 1: Guarantee 3 touch points (handles weird mobile ghost touches)
+        this.input.addPointer(3);
 
         this.add.rectangle(10, 10, 200, 150, 0x000000, 0.5).setOrigin(0,0);
         this.add.text(20, 20, 'LEADERBOARD', { fontSize: '14px', fill: '#ffff00', fontStyle: 'bold' });
@@ -550,24 +550,26 @@ class UIScene extends Phaser.Scene {
 
         this.countdownText = this.add.text(this.cameras.main.centerX, this.cameras.main.centerY, '5', { fontSize: '80px', fill: '#fff', fontStyle: 'bold' }).setOrigin(0.5);
 
-        // --- NEW: VIRTUAL DYNAMIC JOYSTICK & TOUCH CONTROLS ---
-        this.joystickBase = this.add.circle(0, 0, 60, 0x000000, 0.4).setStrokeStyle(4, 0xffffff, 0.3).setVisible(false).setDepth(100);
-        this.joystickThumb = this.add.circle(0, 0, 30, 0xffffff, 0.6).setVisible(false).setDepth(100);
+        // --- BULLETPROOF VIRTUAL JOYSTICK ---
+        this.joystickBase = this.add.circle(0, 0, 60, 0x000000, 0.4).setStrokeStyle(4, 0xffffff, 0.5).setVisible(false).setDepth(100);
+        this.joystickThumb = this.add.circle(0, 0, 30, 0xffffff, 0.8).setVisible(false).setDepth(100);
         this.joystickPointer = null;
         this.moveVector = { x: 0, y: 0 };
 
         this.input.on('pointerdown', (ptr) => {
             if (this.isCountdown || this.gameScene.isDead || this.isMatchEnded || isPausedLocally) return;
             
-            // Left half of screen is for movement (Joystick)
-            if (ptr.x < this.cameras.main.width / 2) {
+            // BULLETPROOF FIX 2: Force it to read the exact screen width of the phone
+            const screenCenter = window.innerWidth / 2;
+
+            if (ptr.x < screenCenter) {
                 if (!this.joystickPointer) {
                     this.joystickPointer = ptr;
                     this.joystickBase.setPosition(ptr.x, ptr.y).setVisible(true);
                     this.joystickThumb.setPosition(ptr.x, ptr.y).setVisible(true);
+                    this.moveVector = { x: 0, y: 0 };
                 }
             } else {
-                // Right half of screen is for shooting
                 this.gameScene.handleShoot(ptr.x, ptr.y);
             }
         });
@@ -579,15 +581,12 @@ class UIScene extends Phaser.Scene {
                 let dist = Math.sqrt(dx * dx + dy * dy);
                 let maxDist = 60;
 
-                // Clamp joystick visual to base radius
                 if (dist > maxDist) {
                     dx = (dx / dist) * maxDist;
                     dy = (dy / dist) * maxDist;
                 }
 
                 this.joystickThumb.setPosition(this.joystickBase.x + dx, this.joystickBase.y + dy);
-                
-                // Set movement vector (-1 to 1)
                 this.moveVector.x = dx / maxDist;
                 this.moveVector.y = dy / maxDist;
             }
