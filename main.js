@@ -1,5 +1,9 @@
 import * as Phaser from 'phaser';
 import { io } from 'socket.io-client';
+// NEW: Force the mobile browser to stop stealing drag gestures
+const style = document.createElement('style');
+style.innerHTML = `body, html, canvas { touch-action: none !important; overflow: hidden; }`;
+document.head.appendChild(style);
 
 const GAME_COLORS = [0x0000ff, 0xff0000, 0x00ff00, 0x9900ff, 0xff9900, 0x00ffff, 0xff00ff, 0xffff00];
 
