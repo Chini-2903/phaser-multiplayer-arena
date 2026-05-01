@@ -174,14 +174,20 @@ io.on('connection', (socket) => {
     });
 
     socket.on('playerMovement', (movementData) => {
-        let code = playerMappings[socket.id];
-        if (code && rooms[code]) {
-            rooms[code].players[socket.id].x = movementData.x;
-            rooms[code].players[socket.id].y = movementData.y;
-            socket.to(code).emit('playerMoved', rooms[code].players[socket.id]);
-        }
-    });
+    let player = players[socket.id];
+    if (player && player.inGame) {
+        player.x = movementData.x;
+        player.y = movementData.y;
+        player.angle = movementData.angle; // <--- ADD THIS ONE LINE
 
+        io.to(player.room).emit('playerMoved', { 
+            id: socket.id, 
+            x: player.x, 
+            y: player.y,
+            angle: player.angle // <--- AND THIS ONE LINE
+        });
+    }
+});
     socket.on('shoot', (bulletData) => {
         let code = playerMappings[socket.id];
         if (code) socket.to(code).emit('playerShot', bulletData);
