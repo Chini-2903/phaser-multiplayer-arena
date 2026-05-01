@@ -517,8 +517,7 @@ class UIScene extends Phaser.Scene {
     }
 
     create() {
-        // BULLETPROOF FIX 1: Guarantee 3 touch points (handles weird mobile ghost touches)
-        this.input.addPointer(3);
+        this.input.addPointer(3); // Support up to 3 fingers
 
         this.add.rectangle(10, 10, 200, 150, 0x000000, 0.5).setOrigin(0,0);
         this.add.text(20, 20, 'LEADERBOARD', { fontSize: '14px', fill: '#ffff00', fontStyle: 'bold' });
@@ -542,71 +541,73 @@ class UIScene extends Phaser.Scene {
         });
 
         const pauseToggle = this.add.text(this.cameras.main.width - 20, 15, '⏸ PAUSE', { fontSize: '14px', fill: '#fff', backgroundColor: '#333', padding: { x: 10, y: 5 } }).setOrigin(1, 0).setInteractive();
-        let isPausedLocally = false;
+        this.isPausedLocally = false;
         pauseToggle.on('pointerdown', () => {
             if(this.isCountdown || this.gameScene.isDead || this.isMatchEnded) return;
-            isPausedLocally = !isPausedLocally;
-            this.pauseBg.setVisible(isPausedLocally);
-            this.pauseText.setVisible(isPausedLocally);
-            this.muteBtn.setVisible(isPausedLocally);
-            this.exitBtn.setVisible(isPausedLocally);
+            this.isPausedLocally = !this.isPausedLocally;
+            this.pauseBg.setVisible(this.isPausedLocally);
+            this.pauseText.setVisible(this.isPausedLocally);
+            this.muteBtn.setVisible(this.isPausedLocally);
+            this.exitBtn.setVisible(this.isPausedLocally);
         });
 
         this.countdownText = this.add.text(this.cameras.main.centerX, this.cameras.main.centerY, '5', { fontSize: '80px', fill: '#fff', fontStyle: 'bold' }).setOrigin(0.5);
 
-        // --- BULLETPROOF VIRTUAL JOYSTICK ---
-        this.joystickBase = this.add.circle(0, 0, 60, 0x000000, 0.4).setStrokeStyle(4, 0xffffff, 0.5).setVisible(false).setDepth(100);
-        this.joystickThumb = this.add.circle(0, 0, 30, 0xffffff, 0.8).setVisible(false).setDepth(100);
-        this.joystickPointer = null;
+        // --- NEW: STATIC VIRTUAL JOYSTICK ---
+        // Fixed coordinates in the bottom left corner
+        this.joyBaseX = 120; 
+        this.joyBaseY = this.cameras.main.height - 120; 
+        this.joystickBase = this.add.circle(this.joyBaseX, this.joyBaseY, 60, 0x000000, 0.5).setStrokeStyle(4, 0xffffff, 0.6).setDepth(100);
+        this.joystickThumb = this.add.circle(this.joyBaseX, this.joyBaseY, 30, 0xffffff, 0.9).setDepth(100);
         this.moveVector = { x: 0, y: 0 };
 
+        // Tap to Shoot (Only responds to right half of screen)
         this.input.on('pointerdown', (ptr) => {
-            if (this.isCountdown || this.gameScene.isDead || this.isMatchEnded || isPausedLocally) return;
-            
-            // BULLETPROOF FIX 2: Force it to read the exact screen width of the phone
-            const screenCenter = window.innerWidth / 2;
+            if (this.isCountdown || this.gameScene.isDead || this.isMatchEnded || this.isPausedLocally) return;
 
-            if (ptr.x < screenCenter) {
-                if (!this.joystickPointer) {
-                    this.joystickPointer = ptr;
-                    this.joystickBase.setPosition(ptr.x, ptr.y).setVisible(true);
-                    this.joystickThumb.setPosition(ptr.x, ptr.y).setVisible(true);
-                    this.moveVector = { x: 0, y: 0 };
-                }
-            } else {
+            const screenCenter = this.cameras.main.width / 2;
+            if (ptr.x >= screenCenter) {
                 this.gameScene.handleShoot(ptr.x, ptr.y);
             }
         });
+    }
 
-        this.input.on('pointermove', (ptr) => {
-            if (this.joystickPointer && ptr.id === this.joystickPointer.id) {
-                let dx = ptr.x - this.joystickBase.x;
-                let dy = ptr.y - this.joystickBase.y;
+    // NEW: Polling loop runs every frame. Never drops touches.
+    update() {
+        if (this.isCountdown || this.gameScene.isDead || this.isMatchEnded || this.isPausedLocally) return;
+
+        let joystickActive = false;
+        const screenCenter = this.cameras.main.width / 2;
+
+        // Check every finger touching the screen
+        for (let ptr of this.input.pointers) {
+            // If a finger is pressed down on the left half of the screen
+            if (ptr.isDown && ptr.x < screenCenter) {
+                let dx = ptr.x - this.joyBaseX;
+                let dy = ptr.y - this.joyBaseY;
                 let dist = Math.sqrt(dx * dx + dy * dy);
                 let maxDist = 60;
 
+                // Lock thumb visual inside the base ring
                 if (dist > maxDist) {
                     dx = (dx / dist) * maxDist;
                     dy = (dy / dist) * maxDist;
                 }
 
-                this.joystickThumb.setPosition(this.joystickBase.x + dx, this.joystickBase.y + dy);
+                this.joystickThumb.setPosition(this.joyBaseX + dx, this.joyBaseY + dy);
                 this.moveVector.x = dx / maxDist;
                 this.moveVector.y = dy / maxDist;
+                joystickActive = true;
+                break; // Only use one finger for movement
             }
-        });
+        }
 
-        const resetJoystick = (ptr) => {
-            if (this.joystickPointer && ptr.id === this.joystickPointer.id) {
-                this.joystickPointer = null;
-                this.joystickBase.setVisible(false);
-                this.joystickThumb.setVisible(false);
-                this.moveVector = { x: 0, y: 0 };
-            }
-        };
-
-        this.input.on('pointerup', resetJoystick);
-        this.input.on('pointerout', resetJoystick);
+        // Snap joystick back to center if no fingers are down on left side
+        if (!joystickActive) {
+            this.joystickThumb.setPosition(this.joyBaseX, this.joyBaseY);
+            this.moveVector.x = 0;
+            this.moveVector.y = 0;
+        }
     }
 
     startCountdown() {
